@@ -35,9 +35,11 @@ PROFILE_MCP: dict[str, str | None] = {
 
 @dataclass
 class RunResult:
-    text: str                          # Claude's response (NOTIFY lines stripped)
+    text: str                          # Claude's response (sentinel lines stripped)
     session_id: str | None             # session ID used or created
-    notifications: list[str] = field(default_factory=list)  # parsed NOTIFY messages
+    notifications: list[str] = field(default_factory=list)   # parsed NOTIFY: messages
+    task_sentinels: list[dict] = field(default_factory=list)  # parsed TASK: directives
+    artifact_sentinels: list[dict] = field(default_factory=list)  # parsed ARTIFACT: directives
     returncode: int = 0
 
 
@@ -67,17 +69,50 @@ def _read_profile_prompt(profile: str) -> str:
         return ""
 
 
-def _parse_output(raw: str) -> tuple[str, list[str]]:
-    """Split stdout into (chat_text, notifications)."""
+def _parse_output(raw: str) -> tuple[str, list[str], list[dict], list[dict]]:
+    """
+    Split stdout into (chat_text, notifications, task_sentinels, artifact_sentinels).
+
+    Sentinel formats emitted by agents:
+      NOTIFY: <message>
+      TASK: <profile> | <title> | <prompt> | auto=<true|false>
+      ARTIFACT: <path> | <title>
+    """
     lines = raw.splitlines()
-    chat_lines = []
-    notifications = []
+    chat_lines: list[str] = []
+    notifications: list[str] = []
+    task_sentinels: list[dict] = []
+    artifact_sentinels: list[dict] = []
+
     for line in lines:
         if line.startswith("NOTIFY:"):
             notifications.append(line[len("NOTIFY:"):].strip())
+
+        elif line.startswith("TASK:"):
+            # TASK: <profile> | <title> | <prompt> | auto=<bool>
+            parts = [p.strip() for p in line[len("TASK:"):].split("|")]
+            if len(parts) >= 3:
+                auto_str = parts[3].lower() if len(parts) >= 4 else ""
+                task_sentinels.append({
+                    "assigned_to": parts[0],
+                    "title": parts[1],
+                    "prompt": parts[2],
+                    "auto_execute": auto_str == "auto=true",
+                })
+
+        elif line.startswith("ARTIFACT:"):
+            # ARTIFACT: <path> | <title>
+            parts = [p.strip() for p in line[len("ARTIFACT:"):].split("|")]
+            if parts:
+                artifact_sentinels.append({
+                    "path": parts[0],
+                    "title": parts[1] if len(parts) > 1 else parts[0],
+                })
+
         else:
             chat_lines.append(line)
-    return "\n".join(chat_lines).strip(), notifications
+
+    return "\n".join(chat_lines).strip(), notifications, task_sentinels, artifact_sentinels
 
 
 def _build_command(profile: str, text: str, session_id: str | None) -> list[str]:
@@ -131,7 +166,7 @@ async def run(
         return RunResult(text=f"Error: {e}", session_id=session_id, returncode=1)
 
     raw = stdout.decode().strip() or stderr.decode().strip() or "Done (no output)."
-    chat_text, notifications = _parse_output(raw)
+    chat_text, notifications, task_sentinels, artifact_sentinels = _parse_output(raw)
 
     # Detect new session ID if this was a fresh run
     new_sid = session_id
@@ -142,5 +177,7 @@ async def run(
         text=chat_text,
         session_id=new_sid,
         notifications=notifications,
+        task_sentinels=task_sentinels,
+        artifact_sentinels=artifact_sentinels,
         returncode=proc.returncode,
     )

@@ -14,7 +14,7 @@ from telegram.ext import (
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from core import session_store, notifier, claude_runner, task_queue
+from core import session_store, notifier, claude_runner, task_queue, workflow_store
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -107,6 +107,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  /bg <task> — run task in background, notify when done\n"
         "  /tasks — list your running background tasks\n"
         "  /review <pr> — review & auto-merge a PR (background)\n\n"
+        "Workflow queue:\n"
+        "  /queue [profile] — list pending workflow tasks\n"
+        "  /approve <WF-NNN> — approve and run a pending task\n"
+        "  /run <WF-NNN> — alias for /approve\n"
+        "  /task <profile> <description> — create a task for an agent\n\n"
         "Scheduled jobs:\n"
         '  /schedule "cron" prompt — add a scheduled job\n'
         "  /schedules — list active scheduled jobs\n"
@@ -257,6 +262,85 @@ async def cmd_unschedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _send(update, f"Job {job_id} removed.")
 
 
+# ── workflow queue commands ───────────────────────────────────────────────────
+
+async def cmd_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List pending workflow tasks, optionally filtered by profile."""
+    if not _allowed(update):
+        return
+    profile_filter = None
+    if context.args and context.args[0].lower() in VALID_PROFILES:
+        profile_filter = context.args[0].lower()
+    tasks = workflow_store.list_pending(profile_filter)
+    if not tasks:
+        label = f" for {profile_filter}" if profile_filter else ""
+        await _send(update, f"No pending tasks{label}.")
+        return
+    lines = []
+    for t in tasks:
+        auto_label = "auto" if t["auto_execute"] else "needs approval"
+        lines.append(f"[{t['id']}] {t['assigned_to']} — {t['title']} ({auto_label})")
+    await _send(update, "📋 Pending tasks:\n" + "\n".join(lines))
+
+
+async def cmd_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Approve a pending workflow task and run it immediately."""
+    if not _allowed(update):
+        return
+    uid = _uid(update)
+    if not context.args:
+        await _send(update, "Usage: /approve <WF-NNN>")
+        return
+    task_id = context.args[0].upper()
+    task = workflow_store.get_task(task_id)
+    if not task:
+        await _send(update, f"Task {task_id} not found.")
+        return
+    if task["status"] != "pending":
+        await _send(update, f"Task {task_id} is {task['status']}, not pending.")
+        return
+    profile = task["assigned_to"]
+    session_id = session_store.get_session(uid, profile)
+    workflow_store.update_status(task_id, "running")
+    task_queue.submit(
+        user_id=uid,
+        profile=profile,
+        text=task["prompt"],
+        session_id=session_id,
+        description=task["title"],
+        wf_task_id=task_id,
+    )
+    await _send(update, f"✅ {task_id} approved — {profile} is now running: {task['title']}")
+
+
+async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Alias for /approve."""
+    await cmd_approve(update, context)
+
+
+async def cmd_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Create a workflow task directly: /task <profile> <description>"""
+    if not _allowed(update):
+        return
+    uid = _uid(update)
+    args = context.args
+    if not args or len(args) < 2 or args[0].lower() not in VALID_PROFILES:
+        await _send(update, f"Usage: /task <profile> <description>\nProfiles: {', '.join(sorted(VALID_PROFILES))}")
+        return
+    profile = args[0].lower()
+    description = " ".join(args[1:])
+    current_profile = session_store.get_profile(uid)
+    task = workflow_store.create(
+        title=description,
+        prompt=description,
+        created_by=current_profile,
+        assigned_to=profile,
+        workflow="manual",
+        auto_execute=False,
+    )
+    await _send(update, f"📋 Task {task['id']} created for {profile}: {description}\nUse /approve {task['id']} to run it.")
+
+
 # ── main message handler ──────────────────────────────────────────────────────
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -333,6 +417,10 @@ def main():
     app.add_handler(CommandHandler("bg", cmd_bg))
     app.add_handler(CommandHandler("tasks", cmd_tasks))
     app.add_handler(CommandHandler("review", cmd_review))
+    app.add_handler(CommandHandler("queue", cmd_queue))
+    app.add_handler(CommandHandler("approve", cmd_approve))
+    app.add_handler(CommandHandler("run", cmd_run))
+    app.add_handler(CommandHandler("task", cmd_task))
     app.add_handler(CommandHandler("schedule", cmd_schedule))
     app.add_handler(CommandHandler("schedules", cmd_schedules))
     app.add_handler(CommandHandler("unschedule", cmd_unschedule))
