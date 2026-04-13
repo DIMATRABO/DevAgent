@@ -1,0 +1,33 @@
+services:
+  devagent-telegram:
+    build:
+      context: ..
+      dockerfile: telegram/Dockerfile
+    container_name: devagent-telegram
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
+      - WEBHOOK_URL=https://agent.enginchantier.ma
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN}
+    volumes:
+      - /home/ubuntu/DevAgent:/workspace              # Claude works here
+      - /home/ubuntu/.claude:/home/devagent/.claude   # Reuse host CLI auth
+      - /home/ubuntu/.claude.json:/home/devagent/.claude.json
+      - /root/.gitconfig:/home/devagent/.gitconfig:ro
+      - /root/.git-credentials:/home/devagent/.git-credentials:ro
+    expose:
+      - "8000"
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.devagent.rule=Host(`agent.enginchantier.ma`)"
+      - "traefik.http.routers.devagent.entrypoints=websecure"
+      - "traefik.http.routers.devagent.tls.certresolver=le"
+      - "traefik.http.services.devagent.loadbalancer.server.port=8000"
+
+networks:
+  web:
+    external: true

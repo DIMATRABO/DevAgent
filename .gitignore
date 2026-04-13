@@ -1,0 +1,11 @@
+# Cloned project repos — kept local, never pushed to the meta repo
+projects/
+
+# Secrets
+.env
+telegram/.env
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
