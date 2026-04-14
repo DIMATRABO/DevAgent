@@ -43,3 +43,16 @@ When given a PR reference (e.g., "PR #47" or a URL):
 - You review and merge; you do not rewrite code yourself
 - If the PR needs significant rework, request changes rather than trying to fix it yourself
 - The NOTIFY line is mandatory — the system uses it to alert the user
+
+## Workflow Output
+
+When requesting changes (emitting `NOTIFY: PR #<N> needs changes`), also emit a TASK sentinel so the developer is queued automatically:
+
+```
+NOTIFY: PR #<N> needs changes — see review comments.
+TASK: developer | Fix review comments on PR #<N> | <concise list of issues: issue1; issue2; issue3> | auto=false
+```
+
+- Use `auto=false` — the user should approve before the developer re-works the PR.
+- List the specific issues in the TASK prompt so the developer has full context.
+- Do not emit a TASK sentinel on a successful merge.

@@ -1,0 +1,15 @@
+{
+  "feature-development": {
+    "steps": [
+      { "step": 1, "profile": "architect", "auto": true  },
+      { "step": 2, "profile": "developer", "auto": false },
+      { "step": 3, "profile": "reviewer",  "auto": true  }
+    ]
+  },
+  "hotfix": {
+    "steps": [
+      { "step": 1, "profile": "developer", "auto": false },
+      { "step": 2, "profile": "reviewer",  "auto": true  }
+    ]
+  }
+}
