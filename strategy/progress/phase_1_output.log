@@ -1,0 +1,40 @@
+[2026-04-16T08:04:57Z] Starting architect for Phase 1
+Phase 1 architecture design is complete. Here is what was produced:
+
+**Output file:** `/workspace/strategy/architecture_target.md`
+
+---
+
+### What was designed
+
+**Section 1 — Task Orchestrator API (7 endpoints)**
+Full request/response schemas, HTTP status codes, and error cases for: `POST /tasks`, `GET /tasks/{id}`, `POST /tasks/{id}/report` (the critical handoff endpoint), `GET /tasks/{id}/next`, `GET /agents`, `POST /agents/register`, `GET /health`.
+
+**Section 2 — SQLite Schema**
+Four tables with all columns, types, constraints, and indexes: `tasks`, `task_steps`, `agents`, `events`. The `events` table is append-only — the authoritative audit trail for every state transition.
+
+**Section 3 — State Machine**
+ASCII diagrams for both task-level and step-level machines. All 7 states (PENDING → ASSIGNED → IN_PROGRESS → AWAITING_HANDOFF → DONE/FAILED/BLOCKED) with a valid-transitions table identifying which actor triggers each transition.
+
+**Section 4 — Handoff Protocol**
+A full numbered HTTP call-flow sequence diagram showing every message between Telegram, Orchestrator, Architect, and Dev — including the exact SQLite writes that happen atomically before any agent is notified, eliminating the race condition from the POC.
+
+**Section 5 — HR Agent API**
+Three endpoints with exact `docker build`, `docker run`, and `docker stop/rm` commands inline. Blue/green deployment: new container health-checked before old is retired.
+
+**Section 6 — Context Persistence**
+`AgentSession` dataclass with all fields, save triggers (5 conditions), the `/workspace/strategy/progress/{task_id}_context.json` file pattern, and the resume prompt template agents inject when restarting mid-step.
+
+**Section 7 — sanad_agent Changes**
+Exact file-by-file changes for Phase 3: `main.py`, `on_start_service.py`, `chat_controller.py`, `chat_service.py`, `update_context.py`, `send_message.py`, plus one new file `actions/agent/orchestrator_client.py`.
+
+**Section 8 — Four Design Decisions**
+SQLite over Redis (single-VPS, ACID, no external dependency), Orchestrator-mediated routing over agent-to-agent (eliminates broken chain root cause), structured tool-call JSON over `to_run.py` (eliminates code injection GAP-11), `/workspace/strategy/progress/` for context (matches masterplan, survives container restarts).
+
+---
+
+**ARTIFACT:** tasks/artifacts/architecture/sanad/architecture_target.md | Sanad Target Architecture — Full Technical Spec
+**TASK:** developer | Implement Task Orchestrator (Phase 2) | See /workspace/strategy/architecture_target.md §1-4 for API spec, data model, state machine, and handoff protocol | auto=false
+**TASK:** developer | Retrofit sanad_agent with Orchestrator client (Phase 3) | See /workspace/strategy/architecture_target.md §7 for exact file changes | auto=false
+**TASK:** developer | Implement HR Agent (Phase 5) | See /workspace/strategy/architecture_target.md §5 for API spec and Docker lifecycle commands | auto=false
+[2026-04-16T08:10:04Z] Phase 1 architect EXITED (code: 0)

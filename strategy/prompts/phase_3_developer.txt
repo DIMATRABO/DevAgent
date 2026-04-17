@@ -1,0 +1,142 @@
+# Phase 3 — Retrofit sanad_agent to use the Orchestrator
+
+## Context
+
+The Task Orchestrator was built in Phase 2 and lives at:
+  /workspace/projects/sanad_agent/orchestrator/
+
+It runs on port 8100. Full API spec is in:
+  /workspace/strategy/architecture_target.md
+
+The existing sanad_agent code is at:
+  /workspace/projects/sanad_agent/
+
+Phase 0 discovery identified a critical chain-break:
+  - services/chat_service.py — result from execute_command is returned but never
+    reported back to any caller; the chain breaks silently at line ~17
+  - main.py — no /task endpoint to receive assigned tasks from Orchestrator
+  - No Orchestrator client exists anywhere in the codebase
+  - No registration with Orchestrator on startup
+
+## Your Task
+
+Retrofit sanad_agent so it integrates with the Task Orchestrator. Do NOT rewrite
+the agent — extend it minimally to add Orchestrator integration.
+
+### Files to read first (mandatory, in order):
+
+1. /workspace/strategy/architecture_target.md   — full spec including handoff protocol
+2. /workspace/strategy/architecture_current_state.md  — what exists today
+3. /workspace/projects/sanad_agent/main.py
+4. /workspace/projects/sanad_agent/services/chat_service.py
+5. /workspace/projects/sanad_agent/controllers/chat_controller.py
+6. /workspace/projects/sanad_agent/services/on_start_service.py  (if it exists)
+7. /workspace/projects/sanad_agent/orchestrator/api/handoff.py  — the report endpoint
+
+### Changes required:
+
+#### 1. New file: actions/agent/orchestrator_client.py
+
+Implement an async HTTP client that wraps the Orchestrator API:
+- `register_agent(agent_id, role, url)` → POST /agents
+- `report(task_id, step_id, status, result=None, artifacts=None, next_role=None, blocked_reason=None)` → POST /tasks/{task_id}/report
+- `poll_next_task(agent_id)` → GET /agents/{agent_id}/next-task
+- `update_heartbeat(agent_id)` → PATCH /agents/{agent_id}/heartbeat
+
+Read the exact request/response schemas from /workspace/strategy/architecture_target.md
+before implementing. Use httpx for async HTTP calls.
+
+Config (read from env vars with sensible defaults):
+- ORCHESTRATOR_URL (default: http://localhost:8100)
+- ORCHESTRATOR_API_KEY (default: dev-key)
+- AGENT_ID (default: sanad_agent_001)
+- AGENT_ROLE (default: developer)
+- AGENT_URL (default: http://localhost:8000)
+
+#### 2. Modify main.py
+
+Add to startup_event():
+- Register this agent with the Orchestrator using orchestrator_client.register_agent()
+- Log success or warning if Orchestrator is unreachable (do NOT crash startup)
+
+Add a new POST /task endpoint:
+- Receives: {"task_id": "...", "step_id": "...", "prompt": "..."}
+- Calls chat_with_agent() asynchronously
+- Immediately returns 202 Accepted (do not block waiting for completion)
+- The async background task handles reporting back to Orchestrator
+
+#### 3. Modify services/chat_service.py
+
+The current flow:
+  build_prompt → think → write_file("to_run.py") → execute_command → return result
+
+The new flow:
+  1. report(task_id, step_id, status="IN_PROGRESS") to Orchestrator
+  2. build_prompt → think → write_file → execute_command
+  3. If execute_command succeeds:
+       report(task_id, step_id, status="COMPLETE", result=cmd_result)
+  4. If execute_command fails or raises:
+       report(task_id, step_id, status="FAILED", blocked_reason=str(error))
+  5. Return cmd_result as before (do not change the return contract)
+
+IMPORTANT: If task_id or step_id is None (legacy direct calls without Orchestrator),
+skip the report() calls entirely. This preserves backward compatibility.
+
+#### 4. Update requirements.txt
+
+Add httpx if not already present.
+
+### Tests
+
+Write /workspace/projects/sanad_agent/tests/test_orchestrator_integration.py
+
+Test 1 — register on startup:
+  Mock the Orchestrator HTTP endpoint. Call startup_event(). Assert POST /agents
+  was called with correct agent_id, role, url.
+
+Test 2 — /task endpoint returns 202 immediately:
+  POST /task with a minimal payload. Assert response is 202 and does not block.
+  Mock chat_with_agent to confirm it is called in background.
+
+Test 3 — chat_service reports COMPLETE on success:
+  Mock orchestrator_client.report and execute_command (returns "ok").
+  Call chat_with_agent(request, task_id="tsk_1", step_id="stp_1").
+  Assert report called with status="IN_PROGRESS" then status="COMPLETE".
+
+Test 4 — chat_service reports FAILED on error:
+  Mock execute_command to raise. Assert report called with status="FAILED".
+
+Test 5 — backward compatibility (no task_id):
+  Call chat_with_agent(request) without task_id/step_id.
+  Assert report is NEVER called.
+
+### Completion
+
+When done, write status to:
+  /workspace/strategy/progress/phase_3_status.md
+
+Use this exact format:
+```
+# Phase 3 Status — sanad_agent Orchestrator Integration
+
+status: COMPLETE
+updated_at: <ISO 8601 timestamp>
+test_result: pass (<N>/<N>)
+
+files_written:
+  - actions/agent/orchestrator_client.py
+  - tests/test_orchestrator_integration.py
+
+files_modified:
+  - main.py
+  - services/chat_service.py
+  - requirements.txt
+
+summary: >
+  <2-3 sentence summary of what was done and what changed>
+
+blocker: none
+```
+
+If any test fails or you cannot complete a step, set status: PARTIAL and document
+the blocker clearly in the `blocker:` field.

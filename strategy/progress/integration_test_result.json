@@ -1,0 +1,9 @@
+{
+  "test": "mocked_two_step_chain",
+  "task_id": "tsk_27422f008e1842c9aee95593a7c889a9",
+  "status": "DONE",
+  "step_1_result": "ECHO: Hello from integration test \u2014 step 1 complete",
+  "step_2_result": "Confirmed receipt of step 1 result: 'ECHO: Hello from integration test \u2014 step 1 complete' \u2014 step 2 complete",
+  "chain_intact": true,
+  "timestamp": "2026-04-16T17:19:08Z"
+}

@@ -1,0 +1,37 @@
+[2026-04-16T09:21:17Z] Starting developer for Phase 2
+**PHASE 2 COMPLETE — 7/7 tests pass.**
+
+---
+
+## What was built
+
+`/workspace/projects/sanad_agent/orchestrator/` — a standalone FastAPI service that owns all workflow state.
+
+### Files written
+
+| File | Purpose |
+|------|---------|
+| `config.py` | Env-var config; default workflow step templates |
+| `models.py` | SQLAlchemy 2.0 async ORM — `Task`, `TaskStep`, `Agent`, `OrchestratorEvent` tables, WAL-mode engine factory |
+| `main.py` | `create_app(engine=)` factory, `X-API-Key` auth middleware, `/health` endpoint |
+| `api/agents.py` | `POST /agents/register`, `GET /agents`, `PATCH /agents/{id}/status` |
+| `api/tasks.py` | `POST /tasks` (auto-assigns first step), `GET /tasks/{id}`, `GET /tasks/{id}/next` |
+| `api/handoff.py` | **`POST /tasks/{id}/report`** — the critical endpoint that fixes the broken chain |
+| `api/events.py` | `GET /events` — filterable immutable audit log |
+| `Dockerfile` + `docker-compose.yml` | Containerised, joins `sanad_network` |
+| `tests/test_handoff.py` | 7 end-to-end tests |
+
+### State machine enforced
+
+```
+PENDING → ASSIGNED → IN_PROGRESS → AWAITING_HANDOFF → DONE
+                                                     ↘ (next step found) ASSIGNED
+                                 → BLOCKED            (paused, retrievable)
+                                 → FAILED             (terminal, visible)
+```
+
+### Critical test verified
+
+- `agent_a` completes step 1 → Orchestrator auto-assigns `agent_b` to step 2 → `agent_b` completes → task `DONE`
+- Chain cannot break silently: BLOCKED tasks are paused and retrievable; FAILED tasks are terminal and visible; duplicate reports on wrong-state return 409
+[2026-04-16T09:32:16Z] Phase 2 developer EXITED (code: 0)

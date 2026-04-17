@@ -1,0 +1,111 @@
+You are performing PHASE 1 — TARGET ARCHITECTURE DESIGN for the Sanad multi-agent project.
+
+CONTEXT: Phase 0 Discovery is complete. Read these documents before designing anything:
+- /workspace/strategy/sanad_masterplan.md
+- /workspace/strategy/architecture_current_state.md
+- /workspace/strategy/architecture_gaps.md
+
+YOUR MISSION: Design the full target architecture. Do NOT write implementation code. Write design documents only.
+
+Output MUST be written to /workspace/strategy/architecture_target.md
+
+The document must contain ALL of the following sections:
+
+---
+
+## 1. Task Orchestrator — Full API Spec
+
+For each endpoint, specify:
+- Method + path
+- Request body schema (field names, types, required/optional)
+- Response schema (success and error cases)
+- HTTP status codes
+
+Required endpoints (minimum):
+- POST /tasks — create a new task workflow
+- GET /tasks/{id} — get task status and step history
+- POST /tasks/{id}/report — agent reports step completion, blockage, or failure
+- GET /tasks/{id}/next — Orchestrator returns next step assignment for an agent
+- GET /agents — list registered agents and their health status
+- POST /agents/register — agent self-registers on startup
+- GET /health — Orchestrator health
+
+---
+
+## 2. Task Data Model
+
+Define the full SQLite schema for the Orchestrator:
+- tasks table: all fields with types and constraints
+- task_steps table: step assignments, status, results
+- agents table: registered agents, roles, URLs, last_seen
+- events table: audit log of all state transitions
+
+---
+
+## 3. State Machine Diagram (ASCII)
+
+Draw the complete state machine for a task. Include:
+- All states (PENDING, ASSIGNED, IN_PROGRESS, AWAITING_HANDOFF, DONE, FAILED, BLOCKED minimum)
+- All valid transitions with triggering conditions
+- Who triggers each transition (CEO, Architect, Dev, Orchestrator itself)
+
+---
+
+## 4. Handoff Protocol — Exact Sequence
+
+Describe the precise sequence of HTTP calls that happen when an agent completes a step:
+1. What the agent POSTs to /tasks/{id}/report
+2. What the Orchestrator does internally (state transition, next step lookup)
+3. What the Orchestrator calls on the next agent
+4. How the originating requester (Telegram) receives the final result
+
+Use a numbered sequence diagram or call-flow diagram.
+
+---
+
+## 5. HR Agent — API Spec
+
+For the agent provisioning service:
+- POST /agents/recruit — clone repo, docker build, start container, register with Orchestrator
+- POST /agents/retire — graceful stop, deregister
+- GET /agents — list running agents with status
+
+Specify the exact Docker lifecycle commands (docker build, docker run, health check).
+
+---
+
+## 6. Context Persistence Schema
+
+Define the AgentSession data structure:
+- All fields with types
+- What gets saved and when (every N minutes, on BLOCKED, on COMPLETE)
+- File path pattern for saves
+- How a session is resumed after interruption
+
+---
+
+## 7. sanad_agent Changes Required (Phase 3 scope)
+
+List the exact file changes needed in the existing sanad_agent codebase:
+- Which files to modify
+- What to add to each file
+- How the agent reports to the Orchestrator instead of fire-and-forget
+
+---
+
+## 8. Key Design Decisions
+
+For each decision in architecture_gaps.md (SQLite vs Redis, HTTP routing, to_run.py model, context location), state:
+- The chosen approach
+- Why
+- What it rules out
+
+---
+
+When done writing /workspace/strategy/architecture_target.md, update the phase status:
+- Write /workspace/strategy/progress/phase_1_status.md with:
+  status: COMPLETE
+  updated_at: <ISO timestamp>
+  output_file: /workspace/strategy/architecture_target.md
+  summary: <one paragraph of what was designed>
+  blocker: none

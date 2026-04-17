@@ -1,0 +1,58 @@
+You are performing PHASE 0 — DISCOVERY of the Sanad multi-agent project.
+
+CONTEXT: Read the master plan first: /workspace/strategy/sanad_masterplan.md
+
+YOUR SOLE MISSION: Understand what currently exists. Do NOT propose solutions yet. That is Phase 1.
+
+=== STEP 1: Read the 4 repos ===
+
+/workspace/projects/sanad_agent/
+  - Map every file with a one-line description
+  - Document all FastAPI endpoints (method, path, what it does)
+  - Map the agent communication logic: how do agents send tasks to each other?
+  - Find the EXACT place where the chain breaks (agent finishes but doesn't notify next)
+  - Document all data models
+
+/workspace/projects/SanadReasoningLayer/
+  - Map every file
+  - Document LLM routing logic: how does it decide which model to call?
+  - List all providers configured (read .env but write only provider NAMES, never values)
+  - Document token management: does it track usage? Does it switch on limit?
+
+/workspace/projects/claude-code-typescript/
+  - Focus on: task state machine, session management, agent communication patterns
+  - Extract key architectural patterns (file:line references)
+  - How does it handle context preservation?
+
+/workspace/projects/clawd-code/
+  - Same as above — note similarities and differences vs claude-code-typescript
+
+=== STEP 2: Write these 3 files ===
+
+FILE 1: /workspace/strategy/architecture_current_state.md
+  - Full file maps of sanad_agent and SanadReasoningLayer
+  - How agents currently communicate (sequence diagram in ASCII)
+  - The exact broken chain location with file:line reference
+  - Current LLM providers and routing logic
+
+FILE 2: /workspace/strategy/architecture_gaps.md
+  - What is MISSING vs. the masterplan requirements (reference masterplan sections)
+  - Gap list: Task Orchestrator, handoff protocol, context persistence, HR Agent, token limit recovery
+  - For each gap: severity (blocking/important/nice-to-have) and estimated complexity
+
+FILE 3: /workspace/strategy/progress/phase_0_status.md
+  Update this file as you work. Format:
+  ```
+  status: IN_PROGRESS | COMPLETE | PARTIAL | BLOCKED
+  updated_at: <ISO timestamp>
+  files_read: <count>
+  current_repo: <which repo you're in>
+  summary: <one paragraph of key findings so far>
+  blocker: <if BLOCKED, explain why>
+  ```
+
+=== CONSTRAINTS ===
+- Update phase_0_status.md every time you finish reading a repo (not just at the end)
+- If you are approaching your context limit: save what you have, mark status PARTIAL, write what still needs to be done in the summary
+- Do NOT write code or propose implementations — discovery only
+- Be specific: always cite file:line when referencing code behavior

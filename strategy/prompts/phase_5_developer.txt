@@ -1,0 +1,121 @@
+You are performing PHASE 5 — HR AGENT of the Sanad multi-agent project.
+
+CONTEXT FILES (read these first):
+1. /workspace/strategy/sanad_masterplan.md — overall vision
+2. /workspace/strategy/architecture_target.md — full spec for the HR Agent (section 5 "HR Agent — API Spec")
+3. /workspace/strategy/architecture_current_state.md — existing repo structure
+4. /workspace/strategy/progress/phase_2_status.md — Orchestrator status (running on port 8100)
+5. /workspace/strategy/progress/phase_3_status.md — sanad_agent integration
+
+GOAL: Build the HR Agent — a FastAPI service that lets the Orchestrator provision new agent containers on demand.
+
+DELIVERABLE: A fully-implemented hr_agent service at /workspace/projects/sanad_agent/hr_agent/
+
+---
+
+## What to Build
+
+The HR Agent is a FastAPI service on port 8200. It has Docker socket access and can clone, build, start, and retire agent containers.
+
+### Required endpoints (from architecture_target.md §5):
+
+1. POST /agents/recruit
+   - Body: {repo_url, role, tag?, port?, env_overrides?}
+   - Sequence: git clone → docker build → docker run → health check (12× @ 5s) → POST /agents/register to Orchestrator
+   - Response 201: {agent_id, container_id, port, url, status: "healthy"}
+   - Response 422: validation error
+   - Response 500: build/start/health failure (include step that failed)
+
+2. POST /agents/validate/{agent_id}
+   - Health-check an existing container (GET /health)
+   - If healthy → confirm ONLINE with Orchestrator
+   - Response 200: {agent_id, healthy: bool, latency_ms}
+
+3. DELETE /agents/{agent_id}
+   - Blue/green retirement: ONLY stop container after confirming no active steps
+   - docker stop → docker rm
+   - Deregister with Orchestrator (PATCH /agents/{id} status=OFFLINE)
+   - Response 204
+
+4. GET /health
+   - Response 200: {"status": "ok", "docker": "connected"}
+   - Must check Docker socket is reachable
+
+### Implementation notes:
+- Use the `docker` Python SDK (`docker` package) for all Docker operations — do NOT shell out to subprocess for Docker
+- Orchestrator URL: read from env var ORCHESTRATOR_URL (default: http://localhost:8100)
+- API key auth: X-API-Key header on all endpoints except GET /health — read from env AGENTS_API_KEY
+- Auto-assign port if not specified: start from 8300, increment until free
+- Health check: retry up to 12 times every 5 seconds (60s total timeout)
+- On failure at any step: clean up (remove container/image if built), return 500 with failed_step
+
+### File layout:
+```
+hr_agent/
+  __init__.py
+  main.py           — FastAPI app, startup event
+  config.py         — env vars (ORCHESTRATOR_URL, AGENTS_API_KEY, DOCKER_BASE_PORT)
+  models.py         — Pydantic request/response models
+  docker_client.py  — wrapper around docker SDK (clone, build, run, stop, rm)
+  orchestrator_client.py — httpx client for Orchestrator register/deregister
+  api/
+    __init__.py
+    agents.py       — all 4 endpoints
+  tests/
+    __init__.py
+    test_hr_agent.py
+  requirements.txt  — fastapi, uvicorn, docker, httpx, pydantic
+  Dockerfile
+  docker-compose.yml
+```
+
+---
+
+## Tests Required
+
+Write tests/test_hr_agent.py. Use unittest.mock to mock the Docker SDK and Orchestrator HTTP calls.
+
+MINIMUM passing tests:
+1. test_health_ok — GET /health returns 200 when docker client connects
+2. test_recruit_success — happy path: mock clone+build+run+healthcheck all succeed, verify Orchestrator register called
+3. test_recruit_cleanup_on_failure — if health check fails all 12 retries, container is stopped/removed and 500 returned
+4. test_validate_healthy — POST /agents/validate/{id} returns {healthy: true} when /health 200
+5. test_retire_removes_container — DELETE /agents/{id} calls docker stop+rm and Orchestrator deregister
+
+---
+
+## Status Update
+
+When complete, write /workspace/strategy/progress/phase_5_status.md with:
+
+```markdown
+## Phase 5 — HR Agent
+
+status: COMPLETE
+updated_at: <ISO timestamp>
+
+files_written:
+  - hr_agent/__init__.py
+  - hr_agent/main.py
+  - hr_agent/config.py
+  - hr_agent/models.py
+  - hr_agent/docker_client.py
+  - hr_agent/orchestrator_client.py
+  - hr_agent/api/__init__.py
+  - hr_agent/api/agents.py
+  - hr_agent/tests/__init__.py
+  - hr_agent/tests/test_hr_agent.py
+  - hr_agent/requirements.txt
+  - hr_agent/Dockerfile
+  - hr_agent/docker-compose.yml
+
+test_result: pass (N/N) or PARTIAL
+
+summary: |
+  <What was built and confirmed working>
+
+blocker: |
+  <Any remaining issue, or "none">
+```
+
+If any test fails or a step is incomplete, still write the status file with status: PARTIAL and document what is missing.

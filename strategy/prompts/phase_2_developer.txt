@@ -1,0 +1,55 @@
+You are performing PHASE 2 — BUILD THE TASK ORCHESTRATOR for the Sanad multi-agent project.
+
+CONTEXT FILES (read these first, in order):
+1. /workspace/strategy/sanad_masterplan.md — overall vision and constraints
+2. /workspace/strategy/architecture_target.md — full technical spec you must implement (endpoints, schemas, state machine, DB schema)
+3. /workspace/strategy/architecture_current_state.md — what currently exists
+4. /workspace/strategy/architecture_gaps.md — gaps to fill
+
+WHAT TO BUILD:
+Implement the Task Orchestrator as a standalone FastAPI service in /workspace/projects/sanad_agent/orchestrator/
+
+Required files:
+- orchestrator/main.py — FastAPI app entry point
+- orchestrator/models.py — SQLite schema and ORM (use SQLAlchemy or aiosqlite, not raw sqlite3)
+- orchestrator/api/tasks.py — task CRUD endpoints
+- orchestrator/api/agents.py — agent registry endpoints
+- orchestrator/api/handoff.py — handoff endpoint (this is the core — fixes the broken chain)
+- orchestrator/api/events.py — event log endpoint
+- orchestrator/config.py — config from env vars
+- orchestrator/Dockerfile — containerize it
+- orchestrator/docker-compose.yml — service definition, network shared with sanad_agent
+- orchestrator/tests/test_handoff.py — prove the chain works end-to-end
+
+THE STATE MACHINE (from architecture_target.md):
+Implement exactly: PENDING → ASSIGNED → IN_PROGRESS → AWAITING_HANDOFF → DONE / FAILED / BLOCKED
+No agent can mark a task DONE without calling the handoff endpoint first.
+The handoff endpoint assigns the next step (or marks the task DONE if no more steps).
+
+THE CRITICAL TEST (must pass before you mark this phase complete):
+- Register two mock agents (agent_a, agent_b)
+- Create a task with two steps: step 1 assigned to agent_a, step 2 assigned to agent_b
+- agent_a calls the handoff endpoint when done
+- Verify: task state moves correctly, agent_b is assigned step 2 automatically
+- The chain must NOT break silently — if handoff fails, task moves to FAILED, never disappears
+
+CONSTRAINTS:
+- Follow the exact API spec in architecture_target.md (endpoints, request/response schemas)
+- Use SQLite for persistence — no Redis, no in-memory dict (must survive restarts)
+- Context save/restore: implement AgentSession model from the spec
+- Token budget: save progress to /workspace/strategy/progress/phase_2_status.md every 30 min
+- Session cap: you have 90 minutes — if approaching limit, save state and mark PARTIAL
+
+PROGRESS TRACKING:
+Update /workspace/strategy/progress/phase_2_status.md as you work:
+  status: IN_PROGRESS | COMPLETE | PARTIAL | BLOCKED
+  updated_at: <ISO timestamp>
+  files_written: <list>
+  test_result: <pass/fail/not_run>
+  summary: <what's done, what's remaining>
+  blocker: <if BLOCKED>
+
+When COMPLETE:
+- All files written
+- Test passes
+- phase_2_status.md set to COMPLETE

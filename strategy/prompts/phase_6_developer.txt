@@ -1,0 +1,135 @@
+You are performing PHASE 6 — INTEGRATION & DEMO of the Sanad multi-agent project.
+
+CONTEXT FILES (read these first):
+1. /workspace/strategy/sanad_masterplan.md — overall vision and Phase 6 goals
+2. /workspace/strategy/architecture_target.md — full system spec and integration diagram
+3. /workspace/strategy/progress/phase_2_status.md — Orchestrator (port 8100, 7/7 tests pass)
+4. /workspace/strategy/progress/phase_3_status.md — sanad_agent Orchestrator integration (5/5 tests pass)
+5. /workspace/strategy/progress/phase_4_status.md — SanadReasoningLayer multi-LLM (PARTIAL: logic verified, Ollama not installed)
+6. /workspace/strategy/progress/phase_5_status.md — HR Agent (port 8200, 5/5 tests pass)
+
+GOAL: Wire all 4 services together under a single docker-compose.yml and run an end-to-end integration test that proves the chain does not break.
+
+DELIVERABLE: A passing integration test that submits a real task through the Orchestrator → sanad_agent → SanadReasoningLayer, gets a result back, and writes it to disk. No broken chains.
+
+---
+
+## What to Build
+
+### 1. Root docker-compose.yml
+
+Create /workspace/projects/sanad_agent/docker-compose.integration.yml that brings up:
+
+- orchestrator (port 8100) — from orchestrator/Dockerfile
+- hr_agent (port 8200) — from hr_agent/Dockerfile
+- sanad_agent (port 9000) — from existing Dockerfile
+- reasoning_layer (port 5600) — from /workspace/projects/SanadReasoningLayer if Dockerfile exists, else skip
+
+Network: all on a shared Docker bridge network called `sanad_net`
+
+Environment variables (pass through from .env):
+- ORCHESTRATOR_URL=http://orchestrator:8100
+- AGENTS_API_KEY (from .env or generate a test key)
+- HR_AGENT_URL=http://hr_agent:8200
+
+If SanadReasoningLayer has no Dockerfile, create a stub: a single-file FastAPI app
+at /workspace/projects/sanad_agent/reasoning_stub/main.py that:
+- Exposes POST /api/v1/reasoning/generate
+- Returns {"result": "STUB: " + prompt} — no real LLM call needed for the integration test
+- Runs on port 5600
+
+### 2. Integration Test Script
+
+Create /workspace/projects/sanad_agent/tests/test_integration.py
+
+The test must:
+1. Submit a task to Orchestrator: POST /tasks with a 2-step workflow
+   - Step 1: role=sanad_agent, prompt="Echo: Hello from integration test"
+   - Step 2: role=sanad_agent, prompt="Confirm receipt of: {step_1_result}"
+2. Poll GET /tasks/{task_id} every 2 seconds for up to 60 seconds
+3. Assert final status = DONE
+4. Assert step_1 result is non-empty
+5. Assert step_2 result references step_1 result
+
+This test MUST be runnable without live Docker (mock the HTTP calls using httpx TestClient
+or unittest.mock). If a live integration run is possible (services are up), also attempt it
+and record the result — but do not FAIL the test suite if services aren't running.
+
+### 3. Verify No Broken Chains
+
+Run the existing test suites to confirm nothing regressed:
+```bash
+cd /workspace/projects/sanad_agent
+python -m pytest orchestrator/tests/ -v
+python -m pytest tests/test_orchestrator_integration.py -v
+python -m pytest hr_agent/tests/ -v
+python -m pytest tests/test_integration.py -v
+```
+
+All must pass. If any fail, fix the regression before marking COMPLETE.
+
+### 4. Demo Task Execution (Best Effort)
+
+If Docker is available on this host, attempt a live end-to-end run:
+```bash
+cd /workspace/projects/sanad_agent
+docker-compose -f docker-compose.integration.yml up -d
+# Wait for health checks
+curl -s http://localhost:8100/health
+curl -s http://localhost:9000/health
+# Submit task
+# Check result
+docker-compose -f docker-compose.integration.yml logs --tail=50
+```
+
+Record the result (success or failure + reason) in the status file. Do NOT block on this —
+if Docker is not accessible or any service fails to start, document it and proceed.
+
+---
+
+## Status Update
+
+When complete, write /workspace/strategy/progress/phase_6_status.md:
+
+```markdown
+## Phase 6 — Integration & Demo
+
+status: COMPLETE | PARTIAL
+updated_at: <ISO timestamp>
+
+files_written:
+  - docker-compose.integration.yml
+  - reasoning_stub/main.py  (if created)
+  - tests/test_integration.py
+
+test_results:
+  orchestrator suite:  pass (N/N) or FAIL
+  sanad_agent suite:   pass (N/N) or FAIL
+  hr_agent suite:      pass (N/N) or FAIL
+  integration suite:   pass (N/N) or FAIL
+
+live_demo:
+  attempted: yes/no
+  result: PASS / FAIL / NOT_ATTEMPTED
+  detail: <what happened>
+
+summary: |
+  <What was built and verified>
+
+blocker: |
+  <Any remaining issue, or "none">
+
+next_steps: |
+  <Recommended actions for the user>
+```
+
+---
+
+## Final Note
+
+This is the last development phase. After this:
+- The CEO will read phase_6_status.md
+- Contact the user on Telegram with the final demo result
+- The pipeline is complete
+
+Make it count. The goal is a working system, not just passing mocks.

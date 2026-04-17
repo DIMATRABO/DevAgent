@@ -1,0 +1,66 @@
+You are performing PHASE 4 — MULTI-LLM HARDENING of the Sanad multi-agent project.
+
+CONTEXT FILES (read these first):
+1. /workspace/strategy/sanad_masterplan.md — overall vision
+2. /workspace/strategy/architecture_current_state.md — current state of SanadReasoningLayer (critical: read the provider/adapter findings)
+3. /workspace/strategy/architecture_gaps.md — gaps GAP-07 through GAP-10 are your focus
+4. /workspace/strategy/architecture_target.md — target design for the reasoning layer
+
+CRITICAL BUGS TO FIX in /workspace/projects/SanadReasoningLayer/:
+
+BUG 1 — Hardcoded provider (GAP-07):
+_select_provider() is hardcoded to return "githubgpt4o". Fix it to actually route intelligently.
+
+BUG 2 — Broken/stub adapters:
+Several provider adapters are stubs. At minimum make sure these work:
+- Deepseek (running on Ollama on this same VPS — find the endpoint in .env)
+- OpenRouter (has working credentials in .env)
+- AnthropicDriver if credentials present
+
+BUG 3 — No token tracking (GAP-08):
+No usage tracking per provider. Add it.
+
+BUG 4 — No provider switching on limit (GAP-09):
+When a provider hits rate limit or token limit, it should switch to the next available one.
+
+BUG 5 — No context save/restore (GAP-10):
+When all providers are exhausted or on limit, save context to disk and schedule retry.
+
+WHAT TO BUILD:
+
+1. Fix _select_provider() — implement priority routing:
+   Priority: Ollama/Deepseek (self-hosted, zero cost) → OpenRouter → other free APIs → paid APIs (Anthropic, OpenAI, Gemini)
+   Fallback: if preferred provider fails or is rate-limited, try next in priority list
+
+2. Token usage tracker:
+   - Track tokens used per provider per hour
+   - Store in a simple JSON file: /workspace/strategy/progress/token_usage.json
+   - Expose GET /providers/status endpoint showing each provider's health + usage
+
+3. Provider health check:
+   - Each provider has a is_available() check
+   - Orchestrator can call GET /providers/status to pick which agent to route to
+
+4. Context save/restore:
+   - If all providers exhausted: save current conversation context to /workspace/strategy/progress/contexts/<session_id>.json
+   - Include: messages[], current_task, timestamp, retry_after
+   - On startup or retry: load context and resume
+
+5. Ollama/Deepseek integration:
+   - Endpoint is on the same VPS — check .env for OLLAMA_URL or similar, or use http://localhost:11434
+   - Test that Deepseek model responds before marking this phase complete
+
+CONSTRAINTS:
+- Read .env for credentials — use what exists, don't invent new ones
+- Do NOT break existing working providers (githubgpt4o, openrouter are working — keep them)
+- Save progress to /workspace/strategy/progress/phase_4_status.md every 30 min
+- 90 minute session cap — if approaching limit, save PARTIAL status
+
+PROGRESS FILE FORMAT:
+  status: IN_PROGRESS | COMPLETE | PARTIAL | BLOCKED
+  updated_at: <ISO timestamp>
+  files_modified: <list>
+  providers_fixed: <list>
+  test_result: pass/fail/not_run
+  summary: <what's done>
+  blocker: <if any>

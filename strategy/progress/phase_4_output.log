@@ -1,0 +1,42 @@
+[2026-04-16T13:17:26Z] Starting developer for Phase 4
+Phase 4 complete. Here's what was built:
+
+---
+
+## Phase 4 — Multi-LLM Hardening: Done
+
+### What was fixed
+
+**BUG 1 — Hardcoded provider** (`llm_adapter_abstraction.py` rewritten)
+- `_select_provider()` now walks a real priority chain: `ollama → deepseek → openrouterliquid → openrouter → githubgpt4o → anthropic → openai → azure → gemini`
+- Caller can still pass a preferred provider; if it's unavailable the adapter silently falls to the next one
+
+**BUG 2 — Broken/stub adapters**
+- `ollama_llm_adapter.py` created: uses AsyncOpenAI against `localhost:11434/v1`, no real API key needed, model=`deepseek-r1:7b`
+- `anthropic_llm_adapter.py` fixed: was a stub returning `"[anthropic] {prompt}"` — now a real AsyncOpenAI driver against the configured Azure endpoint
+
+**BUG 3 — No token tracking** (`services/token_tracker.py` created)
+- Rolling 1-hour windows per provider, persisted to `strategy/progress/token_usage.json`
+- Estimated token count recorded after every successful call (`~4 chars/token`)
+
+**BUG 4 — No provider switching on limit** (built into new `LLMAdapter`)
+- On 429/rate-limit error: `mark_rate_limited()` fills that provider's bucket, it is skipped for the remainder of the hour
+- On any other error: provider is excluded and next is tried
+
+**BUG 5 — No context save/restore** (`services/context_manager.py` created)
+- When all providers exhausted: saves `{session_id, messages, current_task, timestamp, retry_after}` to `strategy/progress/contexts/<id>.json`
+- `build_resume_message()` generates the prompt prefix to prepend on resume
+
+### New API endpoints
+- `GET /api/v1/providers/status` — per-provider health + token usage (for Orchestrator)
+- `GET /api/v1/providers/contexts` — pending context files ready for retry
+
+### Blocker (one action needed)
+Ollama is **not installed** on the VPS, so the zero-cost path won't activate until:
+```bash
+curl -fsSL https://ollama.ai/install.sh | sh
+OLLAMA_HOST=0.0.0.0 ollama serve &
+ollama pull deepseek-r1:7b
+```
+No code changes needed after that — the adapter will automatically route there first.
+[2026-04-16T13:26:48Z] Phase 4 developer EXITED (code: 0)
